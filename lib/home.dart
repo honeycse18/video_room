@@ -23,7 +23,6 @@ class _MyHomePageState extends State<MyHomePage> {
   String channelName = 'Hello';
   bool engineInitialized = false;
 
-  // Track connected users to enforce 2-user limit
   Set<int> connectedUsers = <int>{};
   bool channelFull = false;
 
@@ -38,17 +37,15 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     );
 
-    // Enable video and configure video settings
     await engine!.enableVideo();
     await engine!.enableLocalVideo(true);
     await engine!.enableAudio();
 
-    // Set video encoder configuration for better quality
     await engine!.setVideoEncoderConfiguration(
       const VideoEncoderConfiguration(
         dimensions: VideoDimensions(width: 640, height: 480),
         frameRate: 15,
-        bitrate: 0, // Use default bitrate
+        bitrate: 0,
         orientationMode: OrientationMode.orientationModeAdaptive,
       ),
     );
@@ -62,7 +59,6 @@ class _MyHomePageState extends State<MyHomePage> {
     await [Permission.microphone, Permission.camera].request();
   }
 
-  // Join a channel
   Future<void> joinChannel() async {
     if (!engineInitialized) {
       await _initializeAgoraVoiceSDK();
@@ -82,7 +78,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  // Leave channel
   Future<void> leaveChannel() async {
     await engine?.leaveChannel();
     setState(() {
@@ -93,13 +88,9 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  // Kick extra users (third user onwards)
   Future<void> _kickUser(int uid) async {
-    // You can implement server-side logic to kick users
-    // For now, we'll just ignore their video/audio
     debugPrint("Channel is full. User $uid should be kicked.");
 
-    // Show a message to the user
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -110,7 +101,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Register an event handler for Agora RTC
   void _setupEventHandlers() {
     engine!.registerEventHandler(
       RtcEngineEventHandler(
@@ -121,16 +111,13 @@ class _MyHomePageState extends State<MyHomePage> {
         onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
           debugPrint("Remote user $remoteUid joined");
 
-          // Check if channel already has maximum users
           if (connectedUsers.length >= 1) {
-            // Channel is full (local + 1 remote = 2 users max)
             debugPrint("Channel is full! Rejecting user $remoteUid");
             _kickUser(remoteUid);
             setState(() => channelFull = true);
             return;
           }
 
-          // Add user if space available
           connectedUsers.add(remoteUid);
           setState(() {
             this.remoteUid = remoteUid;
@@ -161,7 +148,6 @@ class _MyHomePageState extends State<MyHomePage> {
         ) {
           debugPrint("Remote video state changed: $state, reason: $reason");
 
-          // Only handle video state for allowed users
           if (!connectedUsers.contains(remoteUid)) {
             debugPrint(
               "Ignoring video state change for unauthorized user: $remoteUid",
@@ -220,7 +206,6 @@ class _MyHomePageState extends State<MyHomePage> {
           padding: const EdgeInsets.all(20.0),
           child: Column(
             children: [
-              // Connection status
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(8.0),
@@ -247,7 +232,6 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
               const SizedBox(height: 10),
 
-              // Local video view
               Stack(
                 children: [
                   Container(
@@ -308,7 +292,6 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
               const SizedBox(height: 10),
 
-              // Remote video view
               Container(
                 width: double.infinity,
                 height: 250,
