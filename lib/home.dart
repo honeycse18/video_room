@@ -60,6 +60,19 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> joinChannel() async {
+    // Check if channel is already full before joining
+    if (channelFull) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Channel is full. Cannot join the call."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     if (!engineInitialized) {
       await _initializeAgoraVoiceSDK();
     }
@@ -88,19 +101,6 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  Future<void> _kickUser(int uid) async {
-    debugPrint("Channel is full. User $uid should be kicked.");
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Channel is full. Maximum 2 users allowed."),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
-  }
-
   void _setupEventHandlers() {
     engine!.registerEventHandler(
       RtcEngineEventHandler(
@@ -111,17 +111,37 @@ class _MyHomePageState extends State<MyHomePage> {
         onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
           debugPrint("Remote user $remoteUid joined");
 
+          // Check if channel is full (already has 1 remote user)
           if (connectedUsers.length >= 1) {
-            debugPrint("Channel is full! Rejecting user $remoteUid");
-            _kickUser(remoteUid);
+            debugPrint("Channel is full! Kicking user $remoteUid");
+
+            // Immediately kick the user by making them leave
+            engine?.muteRemoteVideoStream(uid: remoteUid, mute: true);
+            engine?.muteRemoteAudioStream(uid: remoteUid, mute: true);
+
+            // Show message to current users
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "User $remoteUid tried to join but channel is full.",
+                  ),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+
             setState(() => channelFull = true);
-            return;
+            return; // Don't add this user to connectedUsers
           }
 
+          // Add the user if channel is not full
           connectedUsers.add(remoteUid);
           setState(() {
             this.remoteUid = remoteUid;
-            channelFull = connectedUsers.length >= 1;
+            channelFull =
+                connectedUsers.length >=
+                1; // Channel becomes full with 1 remote user
           });
         },
         onUserOffline: (
@@ -136,7 +156,7 @@ class _MyHomePageState extends State<MyHomePage> {
             if (this.remoteUid == uid) {
               this.remoteUid = null;
             }
-            channelFull = false;
+            channelFull = false; // Channel is no longer full
           });
         },
         onRemoteVideoStateChanged: (
@@ -148,6 +168,7 @@ class _MyHomePageState extends State<MyHomePage> {
         ) {
           debugPrint("Remote video state changed: $state, reason: $reason");
 
+          // Only process video state changes for authorized users
           if (!connectedUsers.contains(remoteUid)) {
             debugPrint(
               "Ignoring video state change for unauthorized user: $remoteUid",
@@ -168,6 +189,21 @@ class _MyHomePageState extends State<MyHomePage> {
           ConnectionChangedReasonType reason,
         ) {
           debugPrint("Connection state changed: $state, reason: $reason");
+        },
+        onError: (ErrorCodeType err, String msg) {
+          debugPrint("Agora Error: $err, Message: $msg");
+
+          // Handle specific error cases
+          if (err == ErrorCodeType.errJoinChannelRejected) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Connection declined. Channel is full."),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
         },
       ),
     );
@@ -292,29 +328,58 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
               const SizedBox(height: 10),
 
-              Container(
-                width: double.infinity,
-                height: 250,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.green),
-                ),
-                child:
-                    remoteUid != null && engine != null
-                        ? AgoraVideoView(
-                          controller: VideoViewController.remote(
-                            rtcEngine: engine!,
-                            connection: RtcConnection(channelId: channelName),
-                            canvas: VideoCanvas(uid: remoteUid),
-                          ),
-                        )
-                        : Center(
-                          child: Text(
-                            channelFull
-                                ? "Channel Full"
-                                : "Waiting for friend...",
-                            style: const TextStyle(fontSize: 16),
+              Stack(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.green),
+                    ),
+                    child:
+                        remoteUid != null && engine != null
+                            ? AgoraVideoView(
+                              controller: VideoViewController.remote(
+                                rtcEngine: engine!,
+                                connection: RtcConnection(
+                                  channelId: channelName,
+                                ),
+                                canvas: VideoCanvas(uid: remoteUid),
+                              ),
+                            )
+                            : Center(
+                              child: Text(
+                                channelFull
+                                    ? "Channel Full"
+                                    : "Waiting for friend...",
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                            ),
+                  ),
+                  if (remoteUid != null)
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          "Friend ($remoteUid)",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 20),
 
